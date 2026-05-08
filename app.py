@@ -165,22 +165,12 @@ def is_tesseract_ready():
     if not TESSERACT_AVAILABLE:
         return False, "مكتبة pytesseract غير مثبتة"
     try:
-        # محاولة تعيين المسار تلقائياً لبيئة Linux (Streamlit Cloud)
-        possible_paths = ['/usr/bin/tesseract', '/app/.apt/usr/bin/tesseract']
-        found = False
-        for path in possible_paths:
-            if os.path.exists(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                found = True
-                break
-        # إذا لم يتم العثور على المسار، جرب الأمر الافتراضي
-        if not found:
-            # قد يكون موجوداً في PATH
-            pass
+        if st.session_state.get("tesseract_path"):
+            pytesseract.pytesseract.tesseract_cmd = st.session_state.tesseract_path
         version = pytesseract.get_tesseract_version()
         return True, f"Tesseract مثبت (الإصدار {version})"
-    except Exception as e:
-        return False, f"Tesseract غير مثبت: {str(e)}"
+    except:
+        return False, "Tesseract غير مثبت"
 
 def extract_text_from_image(image_file) -> str:
     ready, msg = is_tesseract_ready()
@@ -457,7 +447,7 @@ def create_html_invoice(inv):
     <body>
     <div class="invoice">
         <div class="header"><h1>🏛️ Antiq Khana</h1><p>فاتورة بيع</p></div>
-        <div class="info">\n</table>\n
+        <div class="info">\n<tr>\n
             <tr><td style="font-weight:bold;">رقم الفاتورة:浏<td>{inv['invoice_id']}浏</tr>
             <tr><td style="font-weight:bold;">التاريخ:浏<td>{inv['sale_date']}浏</tr>
             <tr><td style="font-weight:bold;">العميل:浏<td>{inv['customer_name']}浏</tr>
@@ -492,7 +482,7 @@ def sell_item(item_id, customer_name, customer_phone, customer_address, discount
     log_action(st.session_state.get("username","system"), f"Sold {item_id} - {inv_id}")
     return True, inv_id, total, item
 
-# ------------------------ البحث في مواقع التحف ------------------------
+# ------------------------ البحث في مواقع التحف (عدلنا هنا) ------------------------
 def create_search_urls(search_term):
     encoded = urllib.parse.quote(search_term)
     return {
@@ -1586,7 +1576,7 @@ else:
 
 st.markdown(f"""
 <div class="footer">
-    © 2026 Techno logic | Haytham Elsaadany.<br>
+    © 2026 Techno logic | Haytham Elsaadany01223999366. 01066774623 .<br>
     جميع الحقوق محفوظة.
 </div>
 """, unsafe_allow_html=True)

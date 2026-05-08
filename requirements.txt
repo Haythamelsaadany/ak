@@ -1,0 +1,13 @@
+streamlit
+pandas
+bcrypt
+qrcode
+Pillow
+opencv-python-headless
+imagehash
+pytesseract
+gspread
+oauth2client
+google-generativeai
+requests
+numpy

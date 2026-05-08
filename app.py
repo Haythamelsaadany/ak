@@ -53,8 +53,8 @@ html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; }
     font-size: 1.8rem; font-weight: bold;
 }
 .footer {
-    text-align: center; margin-top: 3rem; padding: 1rem;
-    font-size: 0.8rem; color: #6c757d; border-top: 1px solid #dee2e6;
+    text-align: center; margin-top: 2rem; padding: 1rem;
+    font-size: 0.8rem; color: #6c757d; border-top: 1px solid #dee2df;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -106,6 +106,8 @@ def process_uploaded_image(uploaded_file):
         return None
 
 def load_image_as_cv2(img_path_or_url):
+    if not OPENCV_AVAILABLE:
+        return None
     try:
         if img_path_or_url.startswith('http'):
             resp = requests.get(img_path_or_url, timeout=10)
@@ -118,12 +120,14 @@ def load_image_as_cv2(img_path_or_url):
         return None
 
 def compute_orb_features(img_cv2):
+    if not OPENCV_AVAILABLE or img_cv2 is None:
+        return None, None
     orb = cv2.ORB_create(nfeatures=2000)
     kp, des = orb.detectAndCompute(img_cv2, None)
     return kp, des
 
 def match_features(des1, des2, ratio_thresh=0.75):
-    if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
+    if not OPENCV_AVAILABLE or des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
         return 0, []
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
     matches = bf.knnMatch(des1, des2, k=2)
@@ -154,19 +158,15 @@ def compute_phash_similarity(img_path_or_url, query_img):
         return 100
 
 # ------------------------ دوال OCR والبحث البصري ------------------------
-def set_tesseract_path(path):
-    if path and os.path.exists(path):
-        pytesseract.pytesseract.tesseract_cmd = path
-        st.session_state.tesseract_path = path
-        return True
-    return False
-
 def is_tesseract_ready():
     if not TESSERACT_AVAILABLE:
         return False, "مكتبة pytesseract غير مثبتة"
     try:
-        if st.session_state.get("tesseract_path"):
-            pytesseract.pytesseract.tesseract_cmd = st.session_state.tesseract_path
+        possible_paths = ['/usr/bin/tesseract', '/app/.apt/usr/bin/tesseract']
+        for path in possible_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
         version = pytesseract.get_tesseract_version()
         return True, f"Tesseract مثبت (الإصدار {version})"
     except:
@@ -265,61 +265,80 @@ def search_by_phash_fallback(uploaded_image, threshold=15):
     return results
 
 # ------------------------ دوال قاعدة البيانات ------------------------
-def upgrade_database():
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(antiques)")
-        existing = [col[1] for col in cursor.fetchall()]
-        default_cols = ['dimensions','material','material_main','children','place_of_origin',
-                        'historical_period','condition','price_source','room','image_urls',
-                        'art_classification','subject','art_symbols','ruler','ai_suggested_price','market_research']
-        for col in default_cols:
-            if col not in existing:
-                conn.execute(f"ALTER TABLE antiques ADD COLUMN {col} TEXT")
-        if 'country' not in existing:
-            conn.execute("ALTER TABLE antiques ADD COLUMN country TEXT")
-        conn.execute("UPDATE antiques SET price=0.0 WHERE price IS NULL")
-        conn.execute("UPDATE antiques SET sold='0' WHERE sold IS NULL")
-        conn.execute('''CREATE TABLE IF NOT EXISTS item_images (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL,
-            image_path TEXT NOT NULL, thumb_path TEXT NOT NULL, sort_order INTEGER DEFAULT 0,
-            FOREIGN KEY (item_id) REFERENCES antiques(id) ON DELETE CASCADE)''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS sales (
-            invoice_id TEXT PRIMARY KEY, customer_name TEXT, customer_phone TEXT,
-            customer_address TEXT, item_id TEXT, item_name TEXT, price REAL,
-            discount REAL, total REAL, sale_date TEXT, status TEXT)''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS customers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, phone TEXT,
-            address TEXT, first_purchase TEXT)''')
-        cursor.execute("PRAGMA table_info(sales)")
-        sales_cols = [c[1] for c in cursor.fetchall()]
-        if 'discount' not in sales_cols:
-            conn.execute("ALTER TABLE sales ADD COLUMN discount REAL DEFAULT 0")
-        if 'total' not in sales_cols:
-            conn.execute("ALTER TABLE sales ADD COLUMN total REAL DEFAULT 0")
-
 def init_db():
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute('''CREATE TABLE IF NOT EXISTS antiques (
-            id TEXT PRIMARY KEY, name TEXT NOT NULL, serial_number TEXT, code TEXT,
-            category TEXT, note TEXT, description TEXT, price REAL, country TEXT,
-            date_added TEXT, sold TEXT DEFAULT '0', sold_date TEXT, invoice_id TEXT,
-            dimensions TEXT, material TEXT, material_main TEXT, children TEXT,
-            place_of_origin TEXT, historical_period TEXT, condition TEXT,
-            price_source TEXT, room TEXT, image_urls TEXT,
-            art_classification TEXT, subject TEXT, art_symbols TEXT, ruler TEXT,
-            ai_suggested_price REAL, market_research TEXT)''')
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            serial_number TEXT,
+            code TEXT,
+            category TEXT,
+            note TEXT,
+            description TEXT,
+            price REAL,
+            country TEXT,
+            date_added TEXT,
+            sold TEXT DEFAULT '0',
+            sold_date TEXT,
+            invoice_id TEXT,
+            dimensions TEXT,
+            material TEXT,
+            material_main TEXT,
+            children TEXT,
+            place_of_origin TEXT,
+            historical_period TEXT,
+            condition TEXT,
+            price_source TEXT,
+            room TEXT,
+            image_urls TEXT,
+            art_classification TEXT,
+            subject TEXT,
+            art_symbols TEXT,
+            ruler TEXT,
+            ai_suggested_price REAL,
+            market_research TEXT
+        )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL, role TEXT NOT NULL)''')
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL
+        )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT,
-            item_id TEXT, timestamp TEXT)''')
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            action TEXT,
+            item_id TEXT,
+            timestamp TEXT
+        )''')
         conn.execute('''CREATE TABLE IF NOT EXISTS item_images (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL,
-            image_path TEXT NOT NULL, thumb_path TEXT NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id TEXT NOT NULL,
+            image_path TEXT NOT NULL,
+            thumb_path TEXT NOT NULL,
             sort_order INTEGER DEFAULT 0,
-            FOREIGN KEY (item_id) REFERENCES antiques(id) ON DELETE CASCADE)''')
+            FOREIGN KEY (item_id) REFERENCES antiques(id) ON DELETE CASCADE
+        )''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS sales (
+            invoice_id TEXT PRIMARY KEY,
+            customer_name TEXT,
+            customer_phone TEXT,
+            customer_address TEXT,
+            item_id TEXT,
+            item_name TEXT,
+            price REAL,
+            discount REAL,
+            total REAL,
+            sale_date TEXT,
+            status TEXT
+        )''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            phone TEXT,
+            address TEXT,
+            first_purchase TEXT
+        )''')
         cur = conn.cursor()
         cur.execute("SELECT * FROM users WHERE username='admin'")
         if not cur.fetchone():
@@ -328,14 +347,25 @@ def init_db():
                          ("admin", hashed, "admin"))
         cur.execute("SELECT COUNT(*) FROM antiques")
         if cur.fetchone()[0] == 0:
-            samples = [
-                ("ANT001", "تمثال فرعوني", "تماثيل", 450.0, "مصر", "برونز", "الأسرة 19", "غرفة 1", "تمثال للإله حورس - حالة ممتازة", "0", None, None, "", "", "", "", "", "", "", "", "", "", "فن مصري قديم", "عبادة الإله حورس", "صقر، عنخ", "حورس"),
-                ("ANT002", "مصحف عثماني", "مخطوطات", 1200.0, "تركيا", "جلد وذهب", "القرن 18", "غرفة 2", "مصحف نادر مكتوب بخط اليد", "0", None, None, "", "", "", "", "", "", "", "", "", "", "فن إسلامي", "مخطوطة دينية", "زخارف نباتية، تذهيب", "السلطان أحمد"),
-            ]
-            for s in samples:
-                conn.execute("""INSERT INTO antiques (id, name, category, price, place_of_origin, material, historical_period, room, description, sold, sold_date, invoice_id, dimensions, material_main, children, condition, price_source, image_urls, art_classification, subject, art_symbols, ruler)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", s)
-    upgrade_database()
+            now = datetime.datetime.now().isoformat()
+            # الأعمدة: 29 عمود (من id إلى market_research)
+            # نضيف قيمتين نموذجيتين مع تطابق العدد (29 قيمة)
+            sample1 = (
+                "ANT001", "تمثال فرعوني", "SN001", "ANT001", "تماثيل", "ملاحظة", 
+                "تمثال للإله حورس - حالة ممتازة", 450.0, "مصر", now, "0", None, None,
+                "30x20x10cm", "برونز", "برونز", "لا", "مصر", "الأسرة 19", "ممتاز",
+                "خبير", "غرفة 1", "", "فن مصري قديم", "عبادة حورس", "صقر، عنخ", "حورس",
+                None, None
+            )
+            sample2 = (
+                "ANT002", "مصحف عثماني", "SN002", "ANT002", "مخطوطات", "ملاحظة",
+                "مصحف نادر مكتوب بخط اليد", 1200.0, "تركيا", now, "0", None, None,
+                "25x18cm", "جلد وذهب", "جلد", "لا", "تركيا", "القرن 18", "جيد",
+                "خبير", "غرفة 2", "", "فن إسلامي", "مخطوطة دينية", "زخارف نباتية، تذهيب", "السلطان أحمد",
+                None, None
+            )
+            conn.execute("""INSERT INTO antiques VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", sample1)
+            conn.execute("""INSERT INTO antiques VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", sample2)
 
 def log_action(username, action, item_id=""):
     try:
@@ -417,7 +447,6 @@ def reset_database_data():
         st.error(f"Error resetting: {e}")
         return False
 
-# ------------------------ الفواتير والبيع ------------------------
 def generate_invoice_id():
     today = datetime.datetime.now().strftime("%Y%m%d")
     with sqlite3.connect(DB_NAME) as conn:
@@ -447,13 +476,13 @@ def create_html_invoice(inv):
     <body>
     <div class="invoice">
         <div class="header"><h1>🏛️ Antiq Khana</h1><p>فاتورة بيع</p></div>
-        <div class="info">\n<table>\n
-            <tr><td style="font-weight:bold;">رقم الفاتورة:浏<table>{inv['invoice_id']}浏</tr>
-            <tr><td style="font-weight:bold;">التاريخ:浏<td>{inv['sale_date']}浏</tr>
-            <tr><td style="font-weight:bold;">العميل:浏<td>{inv['customer_name']}浏</tr>
+        <div class="info">\n<tr>\n
+            <tr><td style="font-weight:bold;">رقم الفاتورة:浏<td>{inv['invoice_id']}浏</table>
+            <tr><td style="font-weight:bold;">التاريخ:浏</td>{inv['sale_date']}浏</td>
+            <tr><td style="font-weight:bold;">العميل:浏<tr>{inv['customer_name']}浏</tr>
             <tr><td style="font-weight:bold;">الهاتف:浏<td>{inv['customer_phone']}浏</tr>
         </table></div>
-        <div class="items"><h3>تفاصيل البند</h3>\n</table>\n<thead><tr><th>القطعة</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
+        <div class="items"><h3>تفاصيل البند</h3>\n<td>\n<thead><tr><th>القطعة</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
         <tbody><tr><td>{inv['item_name']}浏<td>{price:.2f} $浏<td class="highlight">- {discount:.2f} $浏<td>{total:.2f} $浏</tr>
         </tbody></table></div>
         <div class="total">الإجمالي النهائي: {total:.2f} دولار</div>
@@ -485,10 +514,11 @@ def sell_item(item_id, customer_name, customer_phone, customer_address, discount
 def create_search_urls(search_term):
     encoded = urllib.parse.quote(search_term)
     return {
-        "eBay (Sold)": f"https://www.ebay.com/sch/i.html?_nkw={encoded}&LH_Sold=1&LH_Complete=1",
-        "Sotheby's": f"https://www.sothebys.com/en/search?query={encoded}",
-        "Christie's": f"https://www.christies.com/search?q={encoded}",
-        "Mercado Libre": f"https://www.mercadolibre.com.ar/jm/search?as_word={encoded}"
+        "1stDibs": f"https://www.1stdibs.com/search/?q={encoded}",
+        "Invaluable": f"https://www.invaluable.com/search/?q={encoded}",
+        "LiveAuctioneers": f"https://www.liveauctioneers.com/search/?keyword={encoded}",
+        "WorthPoint": f"https://www.worthpoint.com/search?query={encoded}",
+        "Ruby Lane": f"https://www.rubylane.com/search/?q={encoded}"
     }
 
 def parse_image_urls(cell_value) -> List[str]:
@@ -497,8 +527,9 @@ def parse_image_urls(cell_value) -> List[str]:
     urls = re.split(r'[;/,\s]+', cell_value)
     return [u.strip() for u in urls if u.strip().startswith(('http://', 'https://'))]
 
-# ------------------------ دوال التسعير الذكي ------------------------
 def get_gemini_model(api_key):
+    if not GEMINI_AVAILABLE or not api_key:
+        return None
     try:
         genai.configure(api_key=api_key)
         model_names = ['gemini-1.5-flash', 'gemini-1.5-pro']
@@ -620,7 +651,6 @@ def ai_generate_description(name, category, origin):
     ]
     return random.choice(templates)
 
-# ------------------------ النسخ الاحتياطي والاستعادة ------------------------
 def create_backup():
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_zip = os.path.join(BACKUP_FOLDER, f"backup_{ts}.zip")
@@ -663,48 +693,10 @@ def restore_backup(zip_file_or_path):
                 shutil.copytree(extracted_thumb, THUMB_FOLDER)
             else:
                 os.makedirs(THUMB_FOLDER, exist_ok=True)
-        return True, "تمت الاستعادة بنجاح، سيتم إعادة التشغيل"
+        return True, "تمت الاستعادة بنجاح"
     except Exception as e:
         return False, f"فشل الاستعادة: {str(e)}"
 
-def show_backup():
-    if st.session_state.role != "admin":
-        st.error("Admin only")
-        return
-    st.header("💾 Backup & Restore")
-    if st.button("Create Backup"):
-        path = create_backup()
-        with open(path, "rb") as f:
-            st.download_button("Download Backup", f, file_name=os.path.basename(path))
-    st.subheader("Restore Backup")
-    restore_choice = st.radio("المصدر", ["من النسخ المحفوظة", "رفع ملف"], horizontal=True)
-    zip_data = None
-    if restore_choice == "من النسخ المحفوظة":
-        backups = [f for f in os.listdir(BACKUP_FOLDER) if f.endswith('.zip')]
-        if backups:
-            selected = st.selectbox("اختر ملف", backups)
-            if selected:
-                with open(os.path.join(BACKUP_FOLDER, selected), "rb") as f:
-                    zip_data = f.read()
-        else:
-            st.info("لا توجد نسخ")
-    else:
-        uploaded = st.file_uploader("رفع ملف ZIP", type=['zip'])
-        if uploaded:
-            zip_data = uploaded.getvalue()
-    if zip_data:
-        st.warning("سيتم استبدال كل البيانات!")
-        if st.text_input("اكتب 'نعم' للمتابعة") == "نعم":
-            with st.spinner("جاري الاستعادة..."):
-                ok, msg = restore_backup(zip_data)
-            if ok:
-                st.success(msg)
-                st.session_state.clear()
-                st.rerun()
-            else:
-                st.error(msg)
-
-# ------------------------ دوال Google Sheets ------------------------
 def load_from_google_sheets(sheet_url: str, sheet_name: str = "Sheet1", credentials_file: str = "credentials.json"):
     if not GSHEET_AVAILABLE:
         st.error("gspread not installed")
@@ -794,7 +786,6 @@ def import_from_gsheet_to_db(df: pd.DataFrame):
         conn.commit()
     return count
 
-# ------------------------ عرض النتائج ------------------------
 def get_qr(item_data):
     qr_text = f"ANTIQ KHANA\n{item_data.get('name')}\nPrice: ${item_data.get('price',0)}"
     qr = qrcode.make(qr_text)
@@ -814,7 +805,9 @@ def display_search_result(row, score=None, score_type=""):
             if score is not None:
                 st.write(f"**{score_type}:** {score}")
             if st.button(f"📖 Details", key=f"det_{row['id']}"):
-                go_to_details(row['id'])
+                st.session_state.selected_item_id = row['id']
+                st.session_state.page = "details"
+                st.rerun()
 
 # ------------------------ صفحات التطبيق ------------------------
 def show_gallery():
@@ -829,80 +822,36 @@ def show_gallery():
     if df.empty:
         st.info("No items available. Add new items or reset database to load samples.")
         return
-
     col1, col2 = st.columns(2)
     with col1:
         search = st.text_input("🔍 Search (name/code)")
     with col2:
         sort_by = st.selectbox("📊 Sort by", ["Price (Ascending)", "Price (Descending)", "Latest"])
-
-    with st.expander("🔎 Filters"):
-        colA, colB, colC = st.columns(3)
-        with colA:
-            cat_filter = st.multiselect("Category", df['category'].dropna().unique())
-        with colB:
-            art_cat_filter = st.multiselect("Art Classification", df['art_classification'].dropna().unique())
-        with colC:
-            subject_filter = st.multiselect("Subject", df['subject'].dropna().unique())
-        colD, colE, colF = st.columns(3)
-        with colD:
-            origin_filter = st.multiselect("Country / Origin", df['place_of_origin'].dropna().unique())
-        with colE:
-            art_symbols_filter = st.multiselect("Art Symbols", df['art_symbols'].dropna().unique())
-        with colF:
-            ruler_filter = st.multiselect("Ruler", df['ruler'].dropna().unique())
-
-    query = "SELECT * FROM antiques WHERE 1=1"
-    params = []
-    if not show_sold:
-        query += " AND sold='0'"
     if search:
-        query += " AND (name LIKE ? OR code LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
-    if cat_filter:
-        query += f" AND category IN ({','.join('?'*len(cat_filter))})"
-        params.extend(cat_filter)
-    if art_cat_filter:
-        query += f" AND art_classification IN ({','.join('?'*len(art_cat_filter))})"
-        params.extend(art_cat_filter)
-    if subject_filter:
-        query += f" AND subject IN ({','.join('?'*len(subject_filter))})"
-        params.extend(subject_filter)
-    if origin_filter:
-        query += f" AND place_of_origin IN ({','.join('?'*len(origin_filter))})"
-        params.extend(origin_filter)
-    if art_symbols_filter:
-        query += f" AND art_symbols IN ({','.join('?'*len(art_symbols_filter))})"
-        params.extend(art_symbols_filter)
-    if ruler_filter:
-        query += f" AND ruler IN ({','.join('?'*len(ruler_filter))})"
-        params.extend(ruler_filter)
-
-    order = "price ASC" if sort_by == "Price (Ascending)" else "price DESC" if sort_by == "Price (Descending)" else "date_added DESC"
-    query += f" ORDER BY {order}"
-
-    with sqlite3.connect(DB_NAME) as conn:
-        filtered_df = pd.read_sql(query, conn, params=params)
-
-    total_pages = max(1, math.ceil(len(filtered_df) / ITEMS_PER_PAGE))
-    page = st.session_state.gallery_page
+        df = df[df['name'].str.contains(search, case=False, na=False) | df['id'].str.contains(search, case=False, na=False)]
+    if sort_by == "Price (Ascending)":
+        df = df.sort_values('price', ascending=True)
+    elif sort_by == "Price (Descending)":
+        df = df.sort_values('price', ascending=False)
+    else:
+        df = df.sort_values('date_added', ascending=False)
+    total_pages = max(1, math.ceil(len(df) / ITEMS_PER_PAGE))
+    page = st.session_state.get("gallery_page", 0)
     page = max(0, min(page, total_pages-1))
     start = page * ITEMS_PER_PAGE
-    end = min(start + ITEMS_PER_PAGE, len(filtered_df))
-
+    end = min(start + ITEMS_PER_PAGE, len(df))
     col_prev, col_info, col_next = st.columns([1,2,1])
     with col_prev:
         if st.button("⬅️ Previous", disabled=(page==0)):
             st.session_state.gallery_page = page-1
             st.rerun()
     with col_info:
-        st.write(f"Page {page+1} of {total_pages} (Total {len(filtered_df)} items)")
+        st.write(f"Page {page+1} of {total_pages} (Total {len(df)} items)")
     with col_next:
         if st.button("Next ➡️", disabled=(page+1>=total_pages)):
             st.session_state.gallery_page = page+1
             st.rerun()
-
-    page_df = filtered_df.iloc[start:end]
+    page_df = df.iloc[start:end]
     cols = st.columns(3)
     for idx, (_, row) in enumerate(page_df.iterrows()):
         with cols[idx % 3]:
@@ -929,7 +878,9 @@ def show_gallery():
                 else:
                     st.markdown("✅ **Available**", unsafe_allow_html=True)
                 if st.button(f"📖 Details", key=f"det_{row['id']}_{idx}"):
-                    go_to_details(row['id'])
+                    st.session_state.selected_item_id = row['id']
+                    st.session_state.page = "details"
+                    st.rerun()
 
 def show_details():
     if st.session_state.get("pending_item") and not st.session_state.selected_item_id:
@@ -938,14 +889,14 @@ def show_details():
         st.session_state.pending_item = None
         st.rerun()
     if not st.session_state.selected_item_id:
-        go_back_to_main()
-        return
+        st.session_state.page = "main"
+        st.rerun()
     with sqlite3.connect(DB_NAME) as conn:
         df = pd.read_sql("SELECT * FROM antiques WHERE id=?", conn, params=(st.session_state.selected_item_id,))
     if df.empty:
         st.error("Item not found")
-        go_back_to_main()
-        return
+        st.session_state.page = "main"
+        st.rerun()
     row = df.iloc[0]
     st.title(f"📌 Details: {row['name']}")
     img_urls = get_item_image_urls(row['id'])
@@ -978,9 +929,7 @@ def show_details():
                     st.rerun()
     else:
         st.image("https://via.placeholder.com/500?text=No+Images", use_container_width=True)
-
-    st.image(get_qr(row.to_dict()), width=250, caption="QR Code with all details + image link")
-
+    st.image(get_qr(row.to_dict()), width=250, caption="QR Code")
     with st.expander("📋 Item Information"):
         col1, col2 = st.columns(2)
         with col1:
@@ -1015,145 +964,75 @@ def show_details():
             st.write(f"**Ruler:** {row.get('ruler') or '-'}")
         if row['sold'] == '1':
             st.write(f"**Sale Date:** {row['sold_date']} | **Invoice:** {row['invoice_id']}")
-
     st.markdown("---")
     st.subheader("🌐 External Search & Marketplaces")
     term = f"{row['name']} {row['category']} {row['place_of_origin']}".strip()
     search_urls = create_search_urls(term)
-    cols_btns = st.columns(4)
+    cols_btns = st.columns(len(search_urls))
     for i, (site, url) in enumerate(search_urls.items()):
-        with cols_btns[i % 4]:
+        with cols_btns[i]:
             st.link_button(f"🔍 {site}", url, use_container_width=True)
     col_g, col_a = st.columns(2)
     with col_g:
         st.link_button("🌐 Google Search", f"https://www.google.com/search?q={urllib.parse.quote(term)}", use_container_width=True)
     with col_a:
         st.link_button("🛒 Amazon", f"https://www.amazon.com/s?k={urllib.parse.quote(term)}", use_container_width=True)
-
-    # ========== قسم التسعير الذكي ==========
     st.markdown("---")
-    st.subheader("🤖 AI Smart Pricing (Gemini + Market Research)")
-    gemini_key = st.text_input("🔑 Gemini API Key", type="password", key="gem_smart_key", 
-                               value=st.session_state.get("gemini_api_key", ""),
-                               help="Get your key from https://aistudio.google.com/")
+    st.subheader("🤖 AI Smart Pricing")
+    gemini_key = st.text_input("🔑 Gemini API Key", type="password", key="gem_smart_key", value=st.session_state.get("gemini_api_key", ""))
     if gemini_key:
         st.session_state.gemini_api_key = gemini_key
-    use_market = st.checkbox("🌐 Include live market prices (eBay/Amazon)", value=True)
-    if st.button("💰 Estimate Fair Price", type="primary", use_container_width=True):
+    use_market = st.checkbox("🌐 Include live market prices (eBay)", value=True)
+    if st.button("💰 Estimate Fair Price", type="primary"):
         if not st.session_state.get("gemini_api_key"):
             market = search_market_prices(row['name'], row['category'], row['place_of_origin'])
             if market.get('avg'):
                 st.success(f"📊 Market-based estimate: **${market['avg']:.2f}**")
-                st.caption(f"Sources: {', '.join(market['sources'])}")
-                if market.get('min') and market.get('max'):
-                    st.write(f"Range: ${market['min']:.2f} - ${market['max']:.2f}")
-                if st.button("Apply market price", key="apply_market"):
+                if st.button("Apply market price"):
                     with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("UPDATE antiques SET price=?, ai_suggested_price=? WHERE id=?", 
-                                     (market['avg'], market['avg'], row['id']))
-                    st.success("Price updated! Refresh page.")
+                        conn.execute("UPDATE antiques SET price=?, ai_suggested_price=? WHERE id=?", (market['avg'], market['avg'], row['id']))
+                    st.success("Price updated!")
+                    st.rerun()
             else:
-                st.warning("No market data found. Please enter a Gemini API key for AI estimation.")
+                st.warning("No market data found. Enter Gemini API key for AI estimation.")
         else:
-            with st.spinner("Analyzing with AI + market data..."):
-                result = price_antique_with_gemini(row, st.session_state.gemini_api_key, use_market=use_market)
-            if "error" in result and result["error"]:
+            with st.spinner("Analyzing..."):
+                result = price_antique_with_gemini(row, st.session_state.gemini_api_key, use_market)
+            if "error" in result:
                 st.error(f"Error: {result['error']}")
             else:
                 suggested = result.get("suggested_price", row['price'])
-                analysis = result.get("analysis", "")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Current Price", f"${row['price']:.2f}")
-                with col2:
-                    st.metric("AI Suggested Price", f"${suggested:.2f}", 
-                              delta=f"{suggested - row['price']:.2f}" if suggested != row['price'] else None)
-                st.info(f"📝 **Analysis:** {analysis}")
-                if st.button("✅ Apply Suggested Price", key="apply_smart_price"):
+                st.metric("Current Price", f"${row['price']:.2f}")
+                st.metric("AI Suggested Price", f"${suggested:.2f}")
+                st.info(f"📝 {result.get('analysis', '')}")
+                if st.button("✅ Apply Suggested Price"):
                     with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("UPDATE antiques SET price=?, ai_suggested_price=? WHERE id=?", 
-                                     (suggested, suggested, row['id']))
-                    st.success("Price updated successfully! Please refresh the page to see changes.")
+                        conn.execute("UPDATE antiques SET price=?, ai_suggested_price=? WHERE id=?", (suggested, suggested, row['id']))
+                    st.success("Price updated!")
                     st.rerun()
-    # ======================================
-
     if st.session_state.role in ['admin','editor']:
-        st.markdown("---")
-        st.subheader("🤖 AI Features")
-        with st.expander("✨ Price & Description (Classic)"):
-            gem_key = st.text_input("Gemini API Key (optional)", type="password", key="gem_price_legacy", value=st.session_state.get("gemini_api_key",""))
-            if gem_key != st.session_state.get("gemini_api_key"):
-                st.session_state.gemini_api_key = gem_key
-            if st.button("Suggest Price & Description"):
-                new_price = suggest_intelligent_price(row['name'], row['category'], row['place_of_origin'], row['description'], row['price'], st.session_state.gemini_api_key)
-                new_desc = ai_generate_description(row['name'], row['category'], row['place_of_origin'])
-                st.info(f"**Suggested Price:** ${new_price:.2f}\n**Suggested Description:** {new_desc}")
-                if st.button("Apply"):
-                    with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("UPDATE antiques SET price=?, description=? WHERE id=?", (new_price, new_desc, row['id']))
-                    st.success("Updated!")
-                    st.rerun()
-        with st.expander("🔍 Image Analysis (Gemini)"):
-            if img_urls:
-                gem_key2 = st.text_input("Gemini Key", type="password", key="gem_vision", value=st.session_state.get("gemini_api_key",""))
-                if gem_key2 != st.session_state.get("gemini_api_key"):
-                    st.session_state.gemini_api_key = gem_key2
-                if st.button("Analyze First Image"):
-                    with st.spinner("Analyzing..."):
-                        res = analyze_image_with_gemini(img_urls[0], st.session_state.gemini_api_key)
-                        st.code(res, language="markdown")
-            else:
-                st.warning("No images")
-
-    if st.session_state.role in ['admin','editor']:
-        with st.expander("✏️ Edit Item & Images"):
+        with st.expander("✏️ Edit Item"):
             with st.form("edit_form"):
                 new_name = st.text_input("Name", row['name'])
-                new_serial = st.text_input("Serial", row.get('serial_number',''))
-                new_code = st.text_input("Code", row.get('code',''))
-                new_cat = st.text_input("Category", row.get('category',''))
-                new_desc = st.text_area("Description", row.get('description',''))
-                new_note = st.text_area("Note", row.get('note',''))
                 new_price = st.number_input("Price", float(row['price'] or 0.0), step=0.5)
-                new_origin = st.text_input("Place of Origin", row.get('place_of_origin',''))
-                new_dim = st.text_input("Dimensions", row.get('dimensions',''))
-                new_material = st.text_input("Material", row.get('material',''))
-                new_material_main = st.text_input("Main Material", row.get('material_main',''))
-                new_children = st.text_input("Children", row.get('children',''))
-                new_period = st.text_input("Period", row.get('historical_period',''))
-                new_condition = st.text_input("Condition", row.get('condition',''))
-                new_price_source = st.text_input("Price Source", row.get('price_source',''))
-                new_room = st.text_input("Room", row.get('room',''))
-                new_art_class = st.text_input("Art Classification", row.get('art_classification',''))
-                new_subject = st.text_input("Subject", row.get('subject',''))
-                new_art_symbols = st.text_input("Art Symbols", row.get('art_symbols',''))
-                new_ruler = st.text_input("Ruler", row.get('ruler',''))
-                new_images = st.file_uploader("Replace images", type=['jpg','png','jpeg','webp','bmp','tiff','jfif'], accept_multiple_files=True)
+                new_desc = st.text_area("Description", row.get('description',''))
+                new_images = st.file_uploader("Replace images", type=['jpg','png','jpeg'], accept_multiple_files=True)
                 if st.form_submit_button("Save"):
                     with sqlite3.connect(DB_NAME) as conn:
-                        conn.execute("""UPDATE antiques SET
-                            name=?, serial_number=?, code=?, category=?, description=?, note=?, price=?,
-                            place_of_origin=?, dimensions=?, material=?, material_main=?, children=?,
-                            historical_period=?, condition=?, price_source=?, room=?,
-                            art_classification=?, subject=?, art_symbols=?, ruler=?
-                            WHERE id=?""",
-                            (new_name, new_serial, new_code, new_cat, new_desc, new_note, new_price,
-                             new_origin, new_dim, new_material, new_material_main, new_children,
-                             new_period, new_condition, new_price_source, new_room,
-                             new_art_class, new_subject, new_art_symbols, new_ruler, row['id']))
+                        conn.execute("UPDATE antiques SET name=?, price=?, description=? WHERE id=?", (new_name, new_price, new_desc, row['id']))
                     if new_images:
                         delete_item_images(row['id'])
                         save_multiple_images(new_images, row['id'])
-                        update_item_image_urls(row['id'], [])
                     st.success("Saved")
                     st.rerun()
     if st.button("🔙 Back to Gallery"):
-        go_back_to_main()
+        st.session_state.page = "main"
+        st.rerun()
 
 def show_image_search():
     st.markdown('<div class="brand-title">🔍 بحث بالصورة</div>', unsafe_allow_html=True)
     search_type = st.radio("اختر نوع البحث:", ["نصي (OCR)", "بصري (نقاط التشابه ORB)"], horizontal=True)
-    uploaded_img = st.file_uploader("📸 اختر صورة للبحث", type=['jpg','png','jpeg','webp','bmp','tiff','jfif'])
+    uploaded_img = st.file_uploader("📸 اختر صورة للبحث", type=['jpg','png','jpeg'])
     if uploaded_img is not None:
         col1, col2 = st.columns([1,2])
         with col1:
@@ -1173,7 +1052,7 @@ def show_image_search():
                         for _, row in results_df.iterrows():
                             display_search_result(row)
                 else:
-                    if not OPENCV_AVAILABLE and not IMAGEHASH_AVAILABLE:
+                    if not OPENCV_AVAILABLE:
                         st.error("مكتبات البحث البصري غير مثبتة. قم بتشغيل: pip install opencv-python-headless imagehash")
                         return
                     with st.spinner("جاري مقارنة الصور (قد يستغرق قليلاً)..."):
@@ -1181,7 +1060,7 @@ def show_image_search():
                     if not visual_results:
                         st.warning("❌ لم يتم العثور على قطع مشابهة بصرياً.")
                     else:
-                        st.success(f"✅ تم العثور على {len(visual_results)} قطع مشابهة بصرياً (كلما زاد العدد كان التشابه أقوى)")
+                        st.success(f"✅ تم العثور على {len(visual_results)} قطع مشابهة بصرياً")
                         for item_id, matches in visual_results:
                             with sqlite3.connect(DB_NAME) as conn:
                                 row = pd.read_sql("SELECT * FROM antiques WHERE id=?", conn, params=(item_id,)).iloc[0]
@@ -1213,7 +1092,7 @@ def show_add_item():
             price_src = st.text_input("Price Source")
             room = st.text_input("Room/Location")
             note = st.text_area("Additional Notes")
-            images = st.file_uploader("Images", type=['jpg','png','jpeg','webp','bmp','tiff','jfif'], accept_multiple_files=True)
+            images = st.file_uploader("Images", type=['jpg','png','jpeg'], accept_multiple_files=True)
             img_urls_text = st.text_area("Image URLs (separate with / or ;)")
         st.markdown("**Art Information**")
         col3, col4 = st.columns(2)
@@ -1423,7 +1302,44 @@ def show_sales_list():
                 sales.to_excel(writer, index=False)
             st.download_button("Download", buf.getvalue(), file_name=f"sales_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx")
 
-# ------------------------ حالة الجلسة والتنقل ------------------------
+def show_backup():
+    if st.session_state.role != "admin":
+        st.error("Admin only")
+        return
+    st.header("💾 Backup & Restore")
+    if st.button("Create Backup"):
+        path = create_backup()
+        with open(path, "rb") as f:
+            st.download_button("Download Backup", f, file_name=os.path.basename(path))
+    st.subheader("Restore Backup")
+    restore_choice = st.radio("المصدر", ["من النسخ المحفوظة", "رفع ملف"], horizontal=True)
+    zip_data = None
+    if restore_choice == "من النسخ المحفوظة":
+        backups = [f for f in os.listdir(BACKUP_FOLDER) if f.endswith('.zip')]
+        if backups:
+            selected = st.selectbox("اختر ملف", backups)
+            if selected:
+                with open(os.path.join(BACKUP_FOLDER, selected), "rb") as f:
+                    zip_data = f.read()
+        else:
+            st.info("لا توجد نسخ")
+    else:
+        uploaded = st.file_uploader("رفع ملف ZIP", type=['zip'])
+        if uploaded:
+            zip_data = uploaded.getvalue()
+    if zip_data:
+        st.warning("سيتم استبدال كل البيانات!")
+        if st.text_input("اكتب 'نعم' للمتابعة") == "نعم":
+            with st.spinner("جاري الاستعادة..."):
+                ok, msg = restore_backup(zip_data)
+            if ok:
+                st.success(msg)
+                st.session_state.clear()
+                st.rerun()
+            else:
+                st.error(msg)
+
+# ======================== حالة الجلسة والتنقل ========================
 if "auth" not in st.session_state:
     st.session_state.auth = False
     st.session_state.username = ""
@@ -1469,7 +1385,7 @@ def change_password():
                     else:
                         st.sidebar.error("Current password is incorrect")
 
-# ------------------------ تسجيل الدخول ------------------------
+# ======================== تسجيل الدخول ========================
 if not st.session_state.auth:
     st.title("🏛️ Antiq Khana")
     st.subheader("Login")
@@ -1495,7 +1411,7 @@ if not st.session_state.auth:
                 st.error("Invalid credentials")
     st.stop()
 
-# ------------------------ القائمة الجانبية ------------------------
+# ======================== القائمة الجانبية ------------------------
 st.sidebar.markdown(f"**Welcome {st.session_state.username}** - Role: {st.session_state.role}")
 if st.sidebar.button("🔐 Change Password"):
     st.session_state.show_change_pwd = not st.session_state.get("show_change_pwd", False)
@@ -1572,12 +1488,7 @@ else:
     elif choice == "Import from Google Sheets 📊":
         show_gsheet_importer()
 
-st.markdown(f"""
-<div class="footer">
-    © 2026 Techno logic | Haytham Elsaadany.<br>
-    جميع الحقوق محفوظة.
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="footer">© 2026 Techno logic | Haytham Elsaadany.<br>جميع الحقوق محفوظة.</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     init_db()

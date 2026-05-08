@@ -54,7 +54,7 @@ html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; }
 }
 .footer {
     text-align: center; margin-top: 3rem; padding: 1rem;
-    font-size: 0.8rem; color: #6c757d; border-top: 1px solid #dee2df;
+    font-size: 0.8rem; color: #6c757d; border-top: 1px solid #dee2e6;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -447,14 +447,14 @@ def create_html_invoice(inv):
     <body>
     <div class="invoice">
         <div class="header"><h1>🏛️ Antiq Khana</h1><p>فاتورة بيع</p></div>
-        <div class="info">\n<tr>\n
-            <tr><td style="font-weight:bold;">رقم الفاتورة:浏<td>{inv['invoice_id']}浏</tr>
+        <div class="info">\n<table>\n
+            <tr><td style="font-weight:bold;">رقم الفاتورة:浏<table>{inv['invoice_id']}浏</tr>
             <tr><td style="font-weight:bold;">التاريخ:浏<td>{inv['sale_date']}浏</tr>
             <tr><td style="font-weight:bold;">العميل:浏<td>{inv['customer_name']}浏</tr>
             <tr><td style="font-weight:bold;">الهاتف:浏<td>{inv['customer_phone']}浏</tr>
         </table></div>
         <div class="items"><h3>تفاصيل البند</h3>\n</table>\n<thead><tr><th>القطعة</th><th>السعر</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
-        <tbody><tr><td>{inv['item_name']}</td><td>{price:.2f} $</td><td class="highlight">- {discount:.2f} $</td><td>{total:.2f} $</td></tr>
+        <tbody><tr><td>{inv['item_name']}浏<td>{price:.2f} $浏<td class="highlight">- {discount:.2f} $浏<td>{total:.2f} $浏</tr>
         </tbody></table></div>
         <div class="total">الإجمالي النهائي: {total:.2f} دولار</div>
         <div class="footer">شكراً لثقتكم</div>
@@ -482,15 +482,13 @@ def sell_item(item_id, customer_name, customer_phone, customer_address, discount
     log_action(st.session_state.get("username","system"), f"Sold {item_id} - {inv_id}")
     return True, inv_id, total, item
 
-# ------------------------ البحث في مواقع التحف (عدلنا هنا) ------------------------
 def create_search_urls(search_term):
     encoded = urllib.parse.quote(search_term)
     return {
-        "1stDibs": f"https://www.1stdibs.com/search/?q={encoded}",
-        "Invaluable": f"https://www.invaluable.com/search/?q={encoded}",
-        "LiveAuctioneers": f"https://www.liveauctioneers.com/search/?keyword={encoded}",
-        "WorthPoint": f"https://www.worthpoint.com/search?query={encoded}",
-        "Ruby Lane": f"https://www.rubylane.com/search/?q={encoded}"
+        "eBay (Sold)": f"https://www.ebay.com/sch/i.html?_nkw={encoded}&LH_Sold=1&LH_Complete=1",
+        "Sotheby's": f"https://www.sothebys.com/en/search?query={encoded}",
+        "Christie's": f"https://www.christies.com/search?q={encoded}",
+        "Mercado Libre": f"https://www.mercadolibre.com.ar/jm/search?as_word={encoded}"
     }
 
 def parse_image_urls(cell_value) -> List[str]:
@@ -1022,9 +1020,9 @@ def show_details():
     st.subheader("🌐 External Search & Marketplaces")
     term = f"{row['name']} {row['category']} {row['place_of_origin']}".strip()
     search_urls = create_search_urls(term)
-    cols_btns = st.columns(len(search_urls))
+    cols_btns = st.columns(4)
     for i, (site, url) in enumerate(search_urls.items()):
-        with cols_btns[i]:
+        with cols_btns[i % 4]:
             st.link_button(f"🔍 {site}", url, use_container_width=True)
     col_g, col_a = st.columns(2)
     with col_g:
@@ -1576,7 +1574,7 @@ else:
 
 st.markdown(f"""
 <div class="footer">
-    © 2026 Techno logic | Haytham Elsaadany01223999366. 01066774623 .<br>
+    © 2026 Techno logic | Haytham Elsaadany.<br>
     جميع الحقوق محفوظة.
 </div>
 """, unsafe_allow_html=True)
